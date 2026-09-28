@@ -1,0 +1,296 @@
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model User {
+  id        String   @id @default(uuid())
+  name      String
+  email     String   @unique
+  password  String
+  role      String   @default("PARTICIPANT") // "PARTICIPANT", "JUDGE", "ORGANIZER", "ADMIN"
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  ownedTeams   Team[]       @relation("TeamOwner")
+  teamMembers  TeamMember[]
+  organizedEvents Event[]   @relation("EventOrganizer")
+}
+
+model Event {
+  id                 String          @id @default(uuid())
+  name               String
+  description        String          @default("")
+  startDate          DateTime        @default(now())
+  endDate            DateTime        @default(now())
+  registrationStart  DateTime        @default(now())
+  registrationEnd    DateTime        @default(now())
+  submissionDeadline DateTime        @default(now())
+  status             String          @default("DRAFT") // "DRAFT", "PUBLISHED", "ONGOING", "COMPLETED", "CANCELLED"
+  
+  organizerId        String?
+  organizer          User?           @relation("EventOrganizer", fields: [organizerId], references: [id])
+
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
+
+  tracks         Track[]
+  projects       Project[]
+  assignmentRuns AssignmentRun[]
+  rubrics        Rubric[]
+  eventJudges    EventJudge[]
+  teams          Team[]
+  submissions    Submission[]
+}
+
+model Track {
+  id       String    @id @default(uuid())
+  name     String
+  eventId  String
+  event    Event     @relation(fields: [eventId], references: [id])
+  projects Project[]
+}
+
+model Team {
+  id        String       @id @default(uuid())
+  name      String
+  eventId   String
+  event     Event        @relation(fields: [eventId], references: [id])
+  ownerId   String?
+  owner     User?        @relation("TeamOwner", fields: [ownerId], references: [id])
+
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  projects  Project[]
+  judges    Judge[]
+  members   TeamMember[]
+  submissions Submission[]
+
+  @@unique([eventId, name])
+}
+
+model TeamMember {
+  id        String   @id @default(uuid())
+  teamId    String
+  team      Team     @relation(fields: [teamId], references: [id])
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  role      String   @default("MEMBER") // "OWNER", "MEMBER"
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([teamId, userId])
+}
+
+model Project {
+  id          String          @id @default(uuid())
+  name        String
+  description String          @default("")
+  status      String          @default("DRAFT") // "DRAFT", "SUBMITTED", "FINALIZED"
+  eventId     String
+  event       Event           @relation(fields: [eventId], references: [id])
+  trackId     String?
+  track       Track?          @relation(fields: [trackId], references: [id])
+  teamId      String          @unique
+  team        Team            @relation(fields: [teamId], references: [id])
+
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  submissions Submission[]
+  assignments Assignment[]
+  conflicts   JudgeConflict[]
+}
+
+model Submission {
+  id            String   @id @default(uuid())
+  projectId     String   @unique
+  project       Project  @relation(fields: [projectId], references: [id])
+  teamId        String
+  team          Team     @relation(fields: [teamId], references: [id])
+  eventId       String
+  event         Event    @relation(fields: [eventId], references: [id])
+  
+  title         String
+  description   String
+  repositoryUrl String?
+  demoUrl       String?
+  status        String   @default("DRAFT") // "DRAFT", "SUBMITTED", "WITHDRAWN"
+
+  submittedAt   DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model Judge {
+  id          String          @id @default(uuid())
+  userId      String          @unique // References external User ID
+  teamId      String?
+  team        Team?           @relation(fields: [teamId], references: [id])
+  isActive    Boolean         @default(true)
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+  assignments Assignment[]
+  conflicts   JudgeConflict[]
+  eventJudges EventJudge[]
+}
+
+model EventJudge {
+  id         String           @id @default(uuid())
+  eventId    String
+  event      Event            @relation(fields: [eventId], references: [id])
+  judgeId    String
+  judge      Judge            @relation(fields: [judgeId], references: [id])
+  status     String           @default("INVITED") // "INVITED", "ACTIVE", "SUSPENDED", "REMOVED"
+  invitedAt  DateTime         @default(now())
+  acceptedAt DateTime?
+  createdAt  DateTime         @default(now())
+  updatedAt  DateTime         @updatedAt
+
+  @@unique([eventId, judgeId])
+}
+
+model JudgeConflict {
+  id        String         @id @default(uuid())
+  judgeId   String
+  judge     Judge          @relation(fields: [judgeId], references: [id])
+  projectId String
+  project   Project        @relation(fields: [projectId], references: [id])
+  reason    String         // "DECLARED", "PROHIBITED_RELATIONSHIP", "OWN_TEAM", "OWN_PROJECT"
+  createdAt DateTime       @default(now())
+
+  @@unique([judgeId, projectId])
+}
+
+model AssignmentRun {
+  id               String              @id @default(uuid())
+  eventId          String
+  event            Event               @relation(fields: [eventId], references: [id])
+  status           String              // "RUNNING", "COMPLETED", "COMPLETED_WITH_EXCEPTIONS", "FAILED", "SUPERSEDED"
+  algorithmVersion String
+  kValue           Int
+  snapshotPayload  String              // JSON string
+  snapshotHash     String?
+  createdAt        DateTime            @default(now())
+  assignments      Assignment[]
+}
+
+model Assignment {
+  id                   String          @id @default(uuid())
+  assignmentRunId      String
+  assignmentRun        AssignmentRun   @relation(fields: [assignmentRunId], references: [id])
+  projectId            String
+  project              Project         @relation(fields: [projectId], references: [id])
+  judgeId              String
+  judge                Judge           @relation(fields: [judgeId], references: [id])
+  state                String          @default("ACTIVE") // "ACTIVE", "SUPERSEDED", "DROPPED"
+  createdAt            DateTime        @default(now())
+  droppedAt            DateTime?
+  replacementReason    String?
+  replacedAssignmentId String?         @unique
+  replacedAssignment   Assignment?     @relation("AssignmentReplacement", fields: [replacedAssignmentId], references: [id])
+  replacement          Assignment?     @relation("AssignmentReplacement")
+  evaluation           Evaluation?
+
+  @@unique([assignmentRunId, projectId, judgeId])
+}
+
+model Rubric {
+  id          String          @id @default(uuid())
+  eventId     String
+  event       Event           @relation(fields: [eventId], references: [id])
+  name        String
+  description String?
+  versions    RubricVersion[]
+}
+
+model RubricVersion {
+  id          String       @id @default(uuid())
+  rubricId    String
+  rubric      Rubric       @relation(fields: [rubricId], references: [id])
+  version     Int
+  isPublished Boolean      @default(false)
+  createdAt   DateTime     @default(now())
+  criteria    Criterion[]
+  evaluations Evaluation[]
+
+  @@unique([rubricId, version])
+}
+
+model Criterion {
+  id              String           @id @default(uuid())
+  rubricVersionId String
+  rubricVersion   RubricVersion    @relation(fields: [rubricVersionId], references: [id])
+  name            String
+  description     String?
+  weight          Float
+  maxScore        Float
+  displayOrder    Int
+  isRequired      Boolean          @default(true)
+  scores          CriterionScore[]
+}
+
+model Evaluation {
+  id                  String               @id @default(uuid())
+  assignmentId        String               @unique
+  assignment          Assignment           @relation(fields: [assignmentId], references: [id])
+  rubricVersionId     String
+  rubricVersion       RubricVersion        @relation(fields: [rubricVersionId], references: [id])
+  status              String               @default("NOT_STARTED") // "NOT_STARTED", "DRAFT", "SUBMITTED"
+  rawScore            Float?
+  submittedAt         DateTime?
+  previousSubmittedAt DateTime?
+  reopenedAt          DateTime?
+  reopenReason        String?
+  reopenCount         Int                  @default(0)
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+  scores              CriterionScore[]
+  normalizationResult NormalizationResult?
+}
+
+model CriterionScore {
+  id           String     @id @default(uuid())
+  evaluationId String
+  evaluation   Evaluation @relation(fields: [evaluationId], references: [id])
+  criterionId  String
+  criterion    Criterion  @relation(fields: [criterionId], references: [id])
+  score        Float
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  @@unique([evaluationId, criterionId])
+}
+
+model NormalizationResult {
+  id           String              @id @default(uuid())
+  evaluationId String              @unique
+  evaluation   Evaluation          @relation(fields: [evaluationId], references: [id])
+  status       String              // "NORMALIZED", "INSUFFICIENT_SAMPLE", "ZERO_VARIANCE", "UNAVAILABLE", "FAILED"
+  strategyUsed String?
+  resultValue  Float?
+  metadata     String?             // JSON string
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
+}
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  actor     String
+  action    String
+  entity    String
+  entityId  String
+  timestamp DateTime @default(now())
+  metadata  String?  // JSON string
+
+  @@index([entity, entityId])
+  @@index([action])
+  @@index([timestamp])
+  @@index([actor])
+}

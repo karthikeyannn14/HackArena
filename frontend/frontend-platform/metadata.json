@@ -1,0 +1,6 @@
+{
+  "name": "DevPulse Hackathon Platform",
+  "description": "Production-grade hackathon management, project submission, rubric judging, and results platform.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
